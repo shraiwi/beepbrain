@@ -8,7 +8,6 @@ ALLOWED_FORK = "www.beepbox.co"
 
 print("fetching beepbox archive webpage...")
 
-
 with requests.get(r"https://twitter-archive.beepbox.co/") as req:
     archive_html = req.content.decode("utf-8")
 

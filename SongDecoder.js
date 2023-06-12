@@ -7647,7 +7647,7 @@ const path = require('path');
 
 // Directory paths
 const sourceDirectoryPath = 'archive';
-const destinationDirectoryPath = 'parsed-archive';
+const destinationDirectoryPath = 'parsed_archive';
 
 function filterAndTranslateIdx(arr, indices) {
     const removedIndices = new Set();

@@ -1,6 +1,13 @@
 # BeepBrain
 
-Yet another music-generating transformer, but it's my baby.
+My attempt at making a chiptune-generating AI using the BeepBox Archive.
+
+> Please note that everything past here is an incomprehensible brain dump. I'll clean this up once I actually finish training the AI.
+
+## Testing songs
+
+Complex song, multiple chords etc.
+
 
 ## General Training Methodology
 
@@ -14,9 +21,16 @@ A 100M parameter decoder-only transformer model, with a 512-token context window
 The model is designed to generate its output in an interleaved manner. For example, if it is instructed to generate 3 channels the tokens will have the following pattern: abcabcabc...
 
 The model will receive the following "static" inputs:
-- rhythm (one-hot) 5D
-- note channel count (one-hot) 10D
-- drum channel count (one-hot) 5D
+- Rhythm (one-hot) 5D
+- Note channel count (one-hot) 10D
+- Drum channel count (one-hot) 5D
+
+- Token sequence 512x32
+	- Token 32D
+		- Channel metadata 8D
+			- Index (? encoding) 6D
+			- Type (one-hot encoding) 2D
+		- Chord embedding 24D
 
 
 

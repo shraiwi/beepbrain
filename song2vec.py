@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from pprint import pprint
+import timeit
 
 import note2vec
 from note2vec import NoteTokenizer
@@ -35,12 +36,12 @@ def pat2chords(pat, parts_per_tick, out=None, ticks_per_pattern=48, tokenizer=no
 	if out is None:
 		out = np.full(chords_shape, -1, dtype=note2vec.itype) # init chords to all empty
 	
-	assert out.shape == chords_shape, f"out is of invalid size (expected {chords_shape}, got {out.size})"
+	assert out.shape == chords_shape, f"out is of invalid shape (expected {chords_shape}, got {out.shape})"
 
 	for note_start, note_end, note_pitches in pat:
 		note_start_ticks, note_end_ticks = note_start // parts_per_tick, note_end // parts_per_tick
 
-		print(note_start_ticks, note_end_ticks, note_pitches)
+		#print(note_start_ticks, note_end_ticks, note_pitches)
 
 		out[note_start_ticks:note_end_ticks, :len(note_pitches)] = note_pitches
 
@@ -54,50 +55,115 @@ class Song:
 
 		self.parts_per_tick = song_data["beatsPerBar"] * 24 // ticks_per_pattern;
 
-		self.channels = []
+		self.rendered_channels = []
 		self.channel_types = {
 			"note": [],
 			"drum": [],
 		}
 
+		self.bar_indices = [] 
+
 		# render channels into chords
 		for chan in song_data["channels"]:
 			channel_chords = np.full(
-				(len(chan["patterns"]), self.ticks_per_pattern, self.tokenizer.chord_size), 
+				(len(chan["patterns"]) + 1, self.ticks_per_pattern, self.tokenizer.chord_size), 
 				-1, 
 				dtype=note2vec.itype)
+			channel_bars = [0 if chan_idx is None else (chan_idx + 1) for chan_idx in chan["bars"]]
 
 			for pat_idx, pat in enumerate(chan["patterns"]):
-				pat2chords(pat, self.parts_per_tick, out=channel_chords[pat_idx], tokenizer=tokenizer)
+				pat2chords(pat, self.parts_per_tick, out=channel_chords[pat_idx + 1], tokenizer=self.tokenizer)
 
-			self.channel_types[chan["instrumentType"]].append(len(self.channels))
-			self.channels.append(channel_chords)
+			rendered_channel = self.tokenizer.encode(
+				np.concatenate(tuple(channel_chords[channel_bars]), axis=0), 
+				relative={ "note": True, "drum": False }[chan["instrumentType"]]
+			)
+
+			#plt.imshow(rendered_channel.T, aspect='auto')
+			#plt.show()
+
+			self.rendered_channels.append(rendered_channel)
+
+			self.channel_types[chan["instrumentType"]].append(len(self.rendered_channels) - 1)
+			self.bar_indices.append(channel_bars)
+
+		self.rendered_channels = np.array(self.rendered_channels)
+		self.bar_indices = np.array(self.bar_indices, dtype=np.uint8)
+		self.bar_size = self.bar_indices.shape[-1]
+		self.bar_occupancy = self.bar_indices.astype(bool)
+
+	def permutate(self, n_note, n_drum=None):
+		"""
+		yield song permutations containing n_note note channels and n_drum drum channels.
+		this will never return empty songs.
+		"""
+
+		note_combos = list(itertools.permutations(self.channel_types["note"], n_note))
+		drum_combos = list(itertools.permutations(self.channel_types["drum"], n_drum))
+
+		if len(note_combos) == 0: note_combos.append(tuple())
+		if len(drum_combos) == 0: drum_combos.append(tuple())
+
+		for combo in itertools.product(note_combos, drum_combos):
+			combo = tuple(itertools.chain.from_iterable(combo))
+
+			combo_bar_occupancy = self.bar_occupancy[combo, ...]
+			combo_occupancy = np.logical_and.reduce(combo_bar_occupancy, axis=0)
+
+			if not combo_occupancy.any(): continue # skip the combo if there are no notes.
+
+			yield SongPermutation(self, combo)
 
 
 class SongPermutation:
 	def __init__(self, parent, channel_indices):
 		self.parent = parent
 		self.channel_indices = channel_indices
-
-	def __iter__(self):
+		self.shape = (self.parent.rendered_channels.shape[-2] * len(self.channel_indices), 
+			self.parent.rendered_channels.shape[-1])
+	
+	def interleave(self, out=None):
 		"""
-		interleave the channels and yield tokens
+		interleave the channels using numpy.
+
+		(tick, channel_num), interleaved
 		"""
 
-		for token_idx, (chan_idx, chan) in enumerate(itertools.repeat(enumerate(self.channel_indices), self.parent.ticks_per_pattern)):
-			pass
+		if out is None:
+			out = np.empty(self.shape, dtype=self.parent.rendered_channels.dtype)
+		else:
+			assert out.shape == self.shape, f"out is of invalid shape (expected {self.shape}, got {out.shape})"
 
-			
+		for chan_idx, parent_chan_idx in enumerate(self.channel_indices):
+			out[chan_idx::len(self.channel_indices), ...] = self.parent.rendered_channels[parent_chan_idx]
 
-with open("parsed-archive/0.0.json") as f:
-	song_json = json.load(f)
+		indices = np.tile(
+			np.arange(len(self.channel_indices), dtype=note2vec.itype), 
+			(2, self.parent.rendered_channels.shape[-2])
+		).T
+		indices[..., 0] = np.repeat(np.arange(
+			self.parent.rendered_channels.shape[-2], dtype=note2vec.itype), 
+			len(self.channel_indices)
+		)
 
-	"""
-	note: pitches are stored irrespective to key. i.e. 0 will always mean the key.
-	"""
+		return indices, out
 
-	pprint(song_json)
+if __name__ == "__main__":
+	import matplotlib.pyplot as plt
 
-	song = Song(song_json)
+	with open("parsed-archive/15208.0.json") as f:
+		song_json = json.load(f)
 
-	pprint([*map(len, song.channels)])
+		"""
+		note: pitches are stored irrespective to key. i.e. 0 will always mean the key.
+		"""
+
+		#pprint(song_json)
+
+		song = Song(song_json)
+
+		pprint(song.bar_occupancy)
+		pprint(song.channel_types)
+
+		for perm in song.permutate(n_note=None):
+			indices, interleaved = perm.interleave()

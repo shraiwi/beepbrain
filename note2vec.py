@@ -58,7 +58,7 @@ class NoteTokenizer():
 		self.lut = np.concatenate((self.lut, self.null_pitch[None, ...]))
 		self.null_idx = self.lut.shape[0] - 1
 
-	def encode(self, pitches, debias=True, sort=True, clip=True):
+	def encode(self, pitches, relative=True, sort=True, clip=True):
 		"""
 		turns a pitch, chord or array of chords into a token or an array of tokens. 
 		to represent a unplayed key, use any negative pitch value.
@@ -67,7 +67,7 @@ class NoteTokenizer():
 		----------
 		pitches
 			a single pitch, chord, or array of chords to turn into tokens
-		debias
+		relative
 			whether or not to subtract the lowest pitch from all other pitches in the chord.
 		sort
 			whether or not to sort the pitches.
@@ -98,7 +98,7 @@ class NoteTokenizer():
 
 		if sort: pitches.sort()
 
-		if debias:
+		if relative:
 			pitch_children = pitches[..., 1:]
 			np.subtract(pitch_children, pitches[..., 0, None], where=pitch_children != self.null_idx, out=pitch_children) # determine child offset from root note
 
