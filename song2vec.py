@@ -27,6 +27,9 @@ there are 3 different ways we can generate variations of a song:
 - 
 """
 
+MAX_CHANNELS = 15
+METADATA_SIZE = int(np.log2(MAX_CHANNELS) + 0.5) + 1
+
 def pat2chords(pat, parts_per_tick, out=None, ticks_per_pattern=48, tokenizer=note2vec.NoteTokenizer()):
 	"""
 	convert a pattern into chords
@@ -46,8 +49,6 @@ def pat2chords(pat, parts_per_tick, out=None, ticks_per_pattern=48, tokenizer=no
 		out[note_start_ticks:note_end_ticks, :len(note_pitches)] = note_pitches
 
 	return out
-
-MAX_CHANNELS = 15
 
 class Song:
 	def __init__(self, song_data, tokenizer=NoteTokenizer(), ticks_per_pattern=48, include_metadata=True):
@@ -196,7 +197,7 @@ if __name__ == "__main__":
 		#plt.show()
 
 		for perm in song.permutate(n_note=None):
-			indices, interleaved = perm.interleave(method="sparse")
+			indices, interleaved = perm.interleave(method="dense")
 
 			plt.imshow(interleaved[:40].T)
 			plt.show()
