@@ -20,63 +20,67 @@ def embed_semitones(xvals, semitones_norm):
 	"""
 	return np.cos(2.0 * np.pi * (xvals - semitones_norm[..., None]))
 
-def embed(pitches, size=12, octave_range=8, dtype=ftype):
+def embed_pitches(pitches, method="dense", size=12, octave_range=8, dtype=ftype):
 	"""
-	generates an embedding for a set of pitches based on the note and semitone embeddings
+	generates an embedding for an array of pitches based on the note and semitone embeddings.
 	"""
 	pitches = np.asarray(pitches)
 
-	output_shape = (*pitches.shape, size)
-	output_size = np.prod(output_shape)
-
 	octaves, semitones = np.divmod(pitches, SEMITONE_COUNT)
 
-	octaves_norm, semitones_norm = np.clip((octaves / octave_range, semitones / SEMITONE_COUNT), 0.0, 1.0)
+	if method == "dense": # continuous embedding of pitches
+		octaves_norm, semitones_norm = np.clip((octaves / octave_range, semitones / SEMITONE_COUNT), 0.0, 1.0)
+		xvals, dx = np.linspace(0.0, 1.0, size, dtype=dtype, retstep=True)
 
-	xvals, dx = np.linspace(0.0, 1.0, size, dtype=dtype, retstep=True)
+		return embed_octaves(xvals, octaves_norm) * embed_semitones(xvals, semitones_norm)
+	elif method == "sparse": # one-hot embed pitches. this will ignore the "size" parameter
 
-	return embed_octaves(xvals, octaves_norm) * embed_semitones(xvals, semitones_norm)
+		token_size = octave_range + SEMITONE_COUNT + 1
+
+		out = np.zeros((pitches.shape[0], token_size), dtype=dtype)
+
+		idxs = np.arange(pitches.size, dtype=itype)
+
+		# is_occupied, semitones on top, octaves on bottom.
+
+		out[idxs, 0] = 1.
+		out[idxs, 1 + semitones] = 1.
+		out[idxs, 1 + SEMITONE_COUNT + octaves] = 1.
+
+		return out
 
 class NoteTokenizer():
 	def __init__(self, chord_size=4, pitch_size=6, octave_range=8):
 		self.chord_size = chord_size
-		self.pitch_size = pitch_size
 		self.octave_range = octave_range
+		self.num_pitches = self.octave_range * SEMITONE_COUNT
 
-		self.token_size = self.chord_size * self.pitch_size
+		pitch_range = np.arange(self.num_pitches, dtype=itype)
 
-		if True:
-			# normal embeddings
-			self.lut = embed(np.arange(self.octave_range * SEMITONE_COUNT, dtype=itype), size=self.pitch_size)
-			self.null_pitch = np.zeros_like(self.lut[0])
-		else:
-			warnings.warn("using debug embeddings")
-			# debug embeddings
-			self.lut = np.repeat(np.arange(self.octave_range * SEMITONE_COUNT, dtype=itype)[..., None], self.pitch_size, axis=-1)
-			self.null_pitch = np.array([-1] * self.pitch_size)
+		# Generate dense and sparse look-up tables
+		self.lut = {
+			"dense": embed_pitches(pitch_range, method="dense", size=pitch_size, octave_range=self.octave_range),
+			"sparse": embed_pitches(pitch_range, method="sparse", octave_range=self.octave_range)
+		}
+		self.token_size = {}
 
-		self.lut = np.concatenate((self.lut, self.null_pitch[None, ...]))
-		self.null_idx = self.lut.shape[0] - 1
+		for method in self.lut:
 
-	def encode(self, pitches, relative=True, sort=True, clip=True):
+			null_pitch = np.zeros_like(self.lut[method][0])
+
+			self.token_size[method] = null_pitch.size * self.chord_size
+			self.lut[method] = np.concatenate((self.lut[method], null_pitch[None, ...]))
+
+	def cast_pitches(self, pitches):
 		"""
-		turns a pitch, chord or array of chords into a token or an array of tokens. 
-		to represent a unplayed key, use any negative pitch value.
+		clamps and pads a pitch, chord, or array of chords into a valid range.
 
-		Parameters
-		----------
-		pitches
-			a single pitch, chord, or array of chords to turn into tokens
-		relative
-			whether or not to subtract the lowest pitch from all other pitches in the chord.
-		sort
-			whether or not to sort the pitches.
-		clip
-			whether or not to rescale the pitches to fit within the tokenizer's octave range.
+		ignores negative pitches.
 		"""
+
 		pitches = np.asarray(pitches).astype(itype)
 
-		if len(pitches.shape) == 0: 
+		if len(pitches.shape) == 0:
 			# automatically convert a note into a chord containing just the note.
 			pitches = np.pad(pitches[..., None], (0, self.chord_size - 1), constant_values=-1)
 		elif pitches.shape[-1] > self.chord_size:
@@ -88,26 +92,70 @@ class NoteTokenizer():
 
 		# try to intelligently clamp pitches by retaining their semitone while clamping the octave to the max available one.
 		# not perfect, but good enough as it retains the relationship between pitches.
-		oob_pitches_mask = (pitches >= self.lut.shape[0]) & (pitches >= 0)
+		oob_pitches_mask = pitches >= self.num_pitches
 		oob_octave, _ = np.divmod(pitches, SEMITONE_COUNT, where=oob_pitches_mask, out=(np.zeros_like(pitches), pitches))
 		pitches += np.minimum(oob_octave, self.octave_range - 1) * SEMITONE_COUNT
 
+		return pitches
+
+	def split(self, tokens, method="sparse"):
+		"""
+		splits tokens into its constituent parts
+		for dense tokens, this will be the pitches that it is constructed from.
+		for sparse token this will be the pitches in a (is_occupied, semitone, octave) array
+
+		(pitch_0, pitch_1, ...)
+		"""
+
+		for pitch_idx in range(self.chord_size):
+			if method == "dense":
+				raise NotImplementedError()
+			elif method == "sparse":
+				pitch_offset = self.token_size[method] * pitch_idx
+				yield (
+					tokens[..., pitch_offset + 0 : pitch_offset + 1], 
+					tokens[..., pitch_offset + 1 : pitch_offset + 1 + SEMITONE_COUNT], 
+					tokens[..., pitch_offset + 1 + SEMITONE_COUNT : pitch_offset + self.octave_range]
+				)
+
+	def encode(self, pitches, relative=True, sort=True, method="dense"):
+		"""
+		turns a pitch, chord or array of chords into a token or an array of tokens.
+		to represent an unplayed key, use any negative pitch value.
+
+		Parameters
+		----------
+		pitches
+			a single pitch, chord, or array of chords to turn into tokens
+		relative
+			whether or not to subtract the lowest pitch from all other pitches in the chord.
+		sort
+			whether or not to sort the pitches.
+		method
+			the lookup table to use for encoding ("dense" or "sparse").
+		"""
+		pitches = self.cast_pitches(pitches)
+
 		# set null pitches to null index
 		null_entries = pitches < 0
-		pitches[null_entries] = self.null_idx
+		pitches[null_entries] = self.num_pitches
 
-		if sort: pitches.sort()
+		if sort:
+			pitches.sort()
 
 		if relative:
 			pitch_children = pitches[..., 1:]
-			np.subtract(pitch_children, pitches[..., 0, None], where=pitch_children != self.null_idx, out=pitch_children) # determine child offset from root note
+			np.subtract(pitch_children, pitches[..., 0, None], where=pitch_children != self.num_pitches,
+				out=pitch_children)  # determine child offset from root note
 
-		return self.lut[pitches].reshape((*pitches.shape[:-1], self.token_size))
+		return self.lut[method][pitches].reshape((*pitches.shape[:-1], self.token_size[method]))
 
 if __name__ == "__main__":
 	import matplotlib.pyplot as plt
 
-	tokenizer = NoteTokenizer()
+	tokenizer = NoteTokenizer(method="sparse")
+
+	print(tokenizer.lut.shape)
 
 	print(tokenizer.encode(-1))
 

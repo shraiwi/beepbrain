@@ -55,39 +55,43 @@ class Song:
 
 		self.parts_per_tick = song_data["beatsPerBar"] * 24 // ticks_per_pattern;
 
-		self.rendered_channels = []
-		self.channel_types = {
-			"note": [],
-			"drum": [],
-		}
+		self.rendered_channels = { "sparse": [], "dense": [], }
+		self.channel_types = { "note": [], "drum": [], }
 
 		self.bar_indices = [] 
+		self.rendered_channel_chords = []
 
 		# render channels into chords
-		for chan in song_data["channels"]:
+		for chan_idx, chan in enumerate(song_data["channels"]):
 			channel_chords = np.full(
 				(len(chan["patterns"]) + 1, self.ticks_per_pattern, self.tokenizer.chord_size), 
 				-1, 
 				dtype=note2vec.itype)
-			channel_bars = [0 if chan_idx is None else (chan_idx + 1) for chan_idx in chan["bars"]]
+			channel_bars = [0 if pat_idx is None else (pat_idx + 1) for pat_idx in chan["bars"]]
 
 			for pat_idx, pat in enumerate(chan["patterns"]):
 				pat2chords(pat, self.parts_per_tick, out=channel_chords[pat_idx + 1], tokenizer=self.tokenizer)
 
-			rendered_channel = self.tokenizer.encode(
-				np.concatenate(tuple(channel_chords[channel_bars]), axis=0), 
-				relative={ "note": True, "drum": False }[chan["instrumentType"]]
-			)
+				# clamp chords
+				channel_chords[pat_idx + 1] = self.tokenizer.cast_pitches(channel_chords[pat_idx + 1])
 
-			#plt.imshow(rendered_channel.T, aspect='auto')
-			#plt.show()
+			rendered_channel_chords = np.concatenate(tuple(channel_chords[channel_bars]), axis=0)
 
-			self.rendered_channels.append(rendered_channel)
+			for method in ("sparse", "dense"):
+				rendered_channel = self.tokenizer.encode(
+					rendered_channel_chords, 
+					method=method,
+					relative={ "note": True, "drum": False }[chan["instrumentType"]],
+				)
+				self.rendered_channels[method].append(rendered_channel)
 
-			self.channel_types[chan["instrumentType"]].append(len(self.rendered_channels) - 1)
+			self.channel_types[chan["instrumentType"]].append(chan_idx)
 			self.bar_indices.append(channel_bars)
+			self.rendered_channel_chords.append(rendered_channel_chords)
 
-		self.rendered_channels = np.array(self.rendered_channels)
+		for method in self.rendered_channels:
+			self.rendered_channels[method] = np.array(self.rendered_channels[method])
+
 		self.bar_indices = np.array(self.bar_indices, dtype=np.uint8)
 		self.bar_size = self.bar_indices.shape[-1]
 		self.bar_occupancy = self.bar_indices.astype(bool)
@@ -119,30 +123,33 @@ class SongPermutation:
 	def __init__(self, parent, channel_indices):
 		self.parent = parent
 		self.channel_indices = channel_indices
-		self.shape = (self.parent.rendered_channels.shape[-2] * len(self.channel_indices), 
-			self.parent.rendered_channels.shape[-1])
 	
-	def interleave(self, out=None):
+	def interleave(self, method="dense", out=None):
 		"""
 		interleave the channels using numpy.
 
 		(tick, channel_num), interleaved
 		"""
 
+		rendered_channel = self.parent.rendered_channels[method]
+
+		shape = (rendered_channel.shape[-2] * len(self.channel_indices), 
+			rendered_channel.shape[-1])
+
 		if out is None:
-			out = np.empty(self.shape, dtype=self.parent.rendered_channels.dtype)
+			out = np.empty(shape, dtype=rendered_channel.dtype)
 		else:
-			assert out.shape == self.shape, f"out is of invalid shape (expected {self.shape}, got {out.shape})"
+			assert out.shape == shape, f"out is of invalid shape (expected {shape}, got {out.shape})"
 
 		for chan_idx, parent_chan_idx in enumerate(self.channel_indices):
-			out[chan_idx::len(self.channel_indices), ...] = self.parent.rendered_channels[parent_chan_idx]
+			out[chan_idx::len(self.channel_indices), ...] = rendered_channel[parent_chan_idx]
 
 		indices = np.tile(
 			np.arange(len(self.channel_indices), dtype=note2vec.itype), 
-			(2, self.parent.rendered_channels.shape[-2])
+			(2, rendered_channel.shape[-2])
 		).T
 		indices[..., 0] = np.repeat(np.arange(
-			self.parent.rendered_channels.shape[-2], dtype=note2vec.itype), 
+			rendered_channel.shape[-2], dtype=note2vec.itype), 
 			len(self.channel_indices)
 		)
 
@@ -151,7 +158,7 @@ class SongPermutation:
 if __name__ == "__main__":
 	import matplotlib.pyplot as plt
 
-	with open("parsed-archive/15208.0.json") as f:
+	with open("parsed_archive/15208.0.json") as f:
 		song_json = json.load(f)
 
 		"""
@@ -165,5 +172,12 @@ if __name__ == "__main__":
 		pprint(song.bar_occupancy)
 		pprint(song.channel_types)
 
+		plt.imshow(song.rendered_channels["sparse"][1].T)
+		#plt.imshow(song.tokenizer.lut["sparse"].T)
+		plt.show()
+
 		for perm in song.permutate(n_note=None):
-			indices, interleaved = perm.interleave()
+			indices, interleaved = perm.interleave(method="sparse")
+
+			#plt.imshow(interleaved[:40].T)
+			#plt.show()
