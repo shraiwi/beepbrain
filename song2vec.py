@@ -27,9 +27,6 @@ there are 3 different ways we can generate variations of a song:
 - 
 """
 
-MAX_CHANNELS = 15
-METADATA_SIZE = int(np.log2(MAX_CHANNELS) + 0.5) + 1
-
 def pat2chords(pat, parts_per_tick, out=None, ticks_per_pattern=48, tokenizer=note2vec.NoteTokenizer()):
 	"""
 	convert a pattern into chords
@@ -50,7 +47,15 @@ def pat2chords(pat, parts_per_tick, out=None, ticks_per_pattern=48, tokenizer=no
 
 	return out
 
+MAX_CHANNELS = 15
+
 class Song:
+
+	MAX_CHANNELS = MAX_CHANNELS
+
+	METADATA_BIT_COUNT = int(np.log2(MAX_CHANNELS) + 0.5)
+	METADATA_SIZE = int(np.log2(MAX_CHANNELS) + 0.5) + 1
+
 	def __init__(self, song_data, tokenizer=NoteTokenizer(), ticks_per_pattern=48, include_metadata=True):
 
 		self.ticks_per_pattern = ticks_per_pattern
@@ -83,12 +88,10 @@ class Song:
 			rendered_channel_chords = np.concatenate(tuple(channel_chords[channel_bars]), axis=0)
 
 			if include_metadata:
-				metadata_bit_count = int(np.log2(MAX_CHANNELS) + 0.5)
-
-				channel_metadata = np.zeros(1 + metadata_bit_count, dtype=note2vec.ftype)
+				channel_metadata = np.zeros(Song.METADATA_SIZE, dtype=note2vec.ftype)
 
 				channel_metadata[0] = float(is_relative)
-				for bit_num in range(metadata_bit_count):
+				for bit_num in range(Song.METADATA_BIT_COUNT):
 					channel_metadata[1 + bit_num] = float(bool(chan_idx & (1 << bit_num)))
 			else:
 				channel_metadata = np.zeros(0)
