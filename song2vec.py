@@ -47,8 +47,10 @@ def pat2chords(pat, parts_per_tick, out=None, ticks_per_pattern=48, tokenizer=no
 
 	return out
 
+MAX_CHANNELS = 15
+
 class Song:
-	def __init__(self, song_data, tokenizer=NoteTokenizer(), ticks_per_pattern=48):
+	def __init__(self, song_data, tokenizer=NoteTokenizer(), ticks_per_pattern=48, include_metadata=True):
 
 		self.ticks_per_pattern = ticks_per_pattern
 		self.tokenizer = tokenizer
@@ -69,6 +71,8 @@ class Song:
 				dtype=note2vec.itype)
 			channel_bars = [0 if pat_idx is None else (pat_idx + 1) for pat_idx in chan["bars"]]
 
+			is_relative = { "note": True, "drum": False }[chan["instrumentType"]]
+
 			for pat_idx, pat in enumerate(chan["patterns"]):
 				pat2chords(pat, self.parts_per_tick, out=channel_chords[pat_idx + 1], tokenizer=self.tokenizer)
 
@@ -77,12 +81,27 @@ class Song:
 
 			rendered_channel_chords = np.concatenate(tuple(channel_chords[channel_bars]), axis=0)
 
+			if include_metadata:
+				metadata_bit_count = int(np.log2(MAX_CHANNELS) + 0.5)
+
+				channel_metadata = np.zeros(1 + metadata_bit_count, dtype=note2vec.ftype)
+
+				channel_metadata[0] = float(is_relative)
+				for bit_num in range(metadata_bit_count):
+					channel_metadata[1 + bit_num] = float(bool(chan_idx & (1 << bit_num)))
+			else:
+				channel_metadata = np.zeros(0)
+
 			for method in ("sparse", "dense"):
 				rendered_channel = self.tokenizer.encode(
 					rendered_channel_chords, 
 					method=method,
-					relative={ "note": True, "drum": False }[chan["instrumentType"]],
+					relative=is_relative,
 				)
+
+				metadata_broadcast = np.broadcast_to(channel_metadata, (rendered_channel.shape[0], channel_metadata.size))
+
+				rendered_channel = np.concatenate((metadata_broadcast, rendered_channel), axis=-1)
 				self.rendered_channels[method].append(rendered_channel)
 
 			self.channel_types[chan["instrumentType"]].append(chan_idx)
@@ -172,12 +191,12 @@ if __name__ == "__main__":
 		pprint(song.bar_occupancy)
 		pprint(song.channel_types)
 
-		plt.imshow(song.rendered_channels["sparse"][1].T)
+		#plt.imshow(song.rendered_channels["sparse"][1].T)
 		#plt.imshow(song.tokenizer.lut["sparse"].T)
-		plt.show()
+		#plt.show()
 
 		for perm in song.permutate(n_note=None):
 			indices, interleaved = perm.interleave(method="sparse")
 
-			#plt.imshow(interleaved[:40].T)
-			#plt.show()
+			plt.imshow(interleaved[:40].T)
+			plt.show()
