@@ -47,15 +47,15 @@ def pat2chords(pat, parts_per_tick, out=None, ticks_per_pattern=48, tokenizer=no
 
 	return out
 
+def bit_count(n):
+	return int(np.log2(n) + 0.5)
+
 MAX_CHANNELS = 15
 
+def metadata_size(max_channels=MAX_CHANNELS):
+	return bit_count(MAX_CHANNELS) + 1
+
 class Song:
-
-	MAX_CHANNELS = MAX_CHANNELS
-
-	METADATA_BIT_COUNT = int(np.log2(MAX_CHANNELS) + 0.5)
-	METADATA_SIZE = int(np.log2(MAX_CHANNELS) + 0.5) + 1
-
 	def __init__(self, song_data, tokenizer=NoteTokenizer(), ticks_per_pattern=48, include_metadata=True):
 
 		self.ticks_per_pattern = ticks_per_pattern
@@ -88,10 +88,10 @@ class Song:
 			rendered_channel_chords = np.concatenate(tuple(channel_chords[channel_bars]), axis=0)
 
 			if include_metadata:
-				channel_metadata = np.zeros(Song.METADATA_SIZE, dtype=note2vec.ftype)
+				channel_metadata = np.zeros(metadata_size(), dtype=note2vec.ftype)
 
 				channel_metadata[0] = float(is_relative)
-				for bit_num in range(Song.METADATA_BIT_COUNT):
+				for bit_num in range(bit_count(MAX_CHANNELS)):
 					channel_metadata[1 + bit_num] = float(bool(chan_idx & (1 << bit_num)))
 			else:
 				channel_metadata = np.zeros(0)
