@@ -3,7 +3,7 @@ import numpy as np
 from tensorflow.keras import *
 import keras_nlp
 import song2vec, note2vec
-import json
+import json, warnings
 from pathlib import Path
 from song2vec import Song
 
@@ -62,9 +62,11 @@ def render_dir(folder_dir, tokenizer):
 	"""
 	for json_path in Path(folder_dir).glob("*.json"):
 		with json_path.open() as f_json:
-			song_json = json.load(f_json)
-			song = Song(song_json, tokenizer=tokenizer)
-
+			try:
+				song_json = json.load(f_json)
+				song = Song(song_json, tokenizer=tokenizer)
+			except Exception as e:
+				warnings.warn(f"encountered error \"{e}\" while decoding \"{json_path}\"")
 			yield song.render("dense"), song.render("sparse")
 
 def masked_sliding_window(x, d_seq, stride, pad_value=0):
@@ -126,11 +128,8 @@ if __name__ == "__main__":
 
 	dataset = make_song_dataset("parsed_archive", tokenizer, 1024)
 
-	for (x, mask), y in dataset.take(10).as_numpy_iterator():
-		if tf.math.reduce_all(mask) == False:
-			plt.imshow(y.T)
-			plt.show()
-		print(mask.shape, x.shape, y.shape)
+	for i, ((x, mask), y) in enumerate(dataset.as_numpy_iterator()):
+		if i % 100 == 0: print(f"reached chunk {i}")
 
 	print(*masked_sliding_window([[0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 3, 3]], 4, 2))
 

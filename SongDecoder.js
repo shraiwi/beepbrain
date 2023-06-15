@@ -7778,7 +7778,7 @@ fs.readdir(sourceDirectoryPath, (err, files) => {
 
                         // Save each item in parsedSongs as a separate JSON file
                         parsedSongs.forEach((song, index) => {
-                            if (!song) return;
+                            if (!song || song.channels.length === 0) return;
 
                             const serializedData = JSON.stringify(song);
                             const fileName = `${path.parse(file).name}.${index}.json`;

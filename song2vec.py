@@ -58,7 +58,6 @@ class Song:
 		return bit_count(Song.MAX_CHANNELS) + 1
 
 	def __init__(self, song_data, tokenizer=NoteTokenizer(), ticks_per_pattern=48, include_metadata=True):
-
 		self.ticks_per_pattern = ticks_per_pattern
 		self.tokenizer = tokenizer
 
@@ -69,6 +68,9 @@ class Song:
 
 		self.bar_indices = [] 
 		self.rendered_channel_chords = []
+
+		if len(song_data["channels"]) == 0:
+			raise ValueError("empty song!")
 
 		# render channels into chords
 		for chan_idx, chan in enumerate(song_data["channels"]):
@@ -115,7 +117,6 @@ class Song:
 
 		for method in self.rendered_channels:
 			self.rendered_channels[method] = np.array(self.rendered_channels[method])
-
 
 		self.bar_indices = np.array(self.bar_indices, dtype=np.uint8)
 		self.bar_size = self.bar_indices.shape[-1]
