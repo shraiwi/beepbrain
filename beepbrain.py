@@ -44,8 +44,8 @@ class NoteTokenLoss(losses.Loss):
 		true_metadata = y_true[:Song.metadata_size()]
 		pred_metadata = y_pred[:Song.metadata_size()]
 
-		true_is_occupied, true_semitones, true_octaves = tokenizer.split(y_true[Song.metadata_size():, ...])
-		pred_is_occupied, pred_semitones, pred_octaves = tokenizer.split(y_pred[Song.metadata_size():, ...])
+		true_is_occupied, true_semitones, true_octaves = self.tokenizer.split(y_true[Song.metadata_size():, ...])
+		pred_is_occupied, pred_semitones, pred_octaves = self.tokenizer.split(y_pred[Song.metadata_size():, ...])
 
 		loss_metadata = self.binary_loss(true_metadata, pred_metadata)
 		loss_is_occupied = self.binary_loss(true_is_occupied, pred_is_occupied)
