@@ -122,7 +122,7 @@ class Song:
 		self.bar_occupancy = self.bar_indices.astype(bool)
 
 	def render(self, method="dense", out=None):
-		return SongPermutation(self, tuple(range(len(self.rendered_channels)))).render(method=method, out=out)
+		return SongPermutation(self, (*self.channel_types["note"], *self.channel_types["drum"])).render(method=method, out=out)
 
 	def permutate(self, n_note, n_drum=None):
 		"""
