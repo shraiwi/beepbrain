@@ -9,7 +9,21 @@ from song2vec import Song
 
 class BeepBrain(Model):
 	def __init__(self, name="BeepBrain", d_model=32, d_seq=1024, d_out=(12+8)*4+2, d_ff=1024, num_heads=8, num_decoders=4, dropout=0.0):
-		super().__init__(name=name)
+		layer_input_seq = layers.Input(name="sequence", shape=(d_seq, d_out))
+		layer_input_mask = layers.Input(name="mask", shape=(d_seq,))
+
+		layer_decoder = layer_input_seq
+		for i in range(num_decoders):
+			layer_decoder = keras_nlp.layers.TransformerDecoder(
+				name=f"decoder{i}", intermediate_dim=d_ff, num_heads=num_heads)(
+					layer_decoder, decoder_padding_mask=layer_input_mask
+				)
+
+		layer_linear = layers.Dense(name="linear", units=d_out)(layer_decoder)
+
+		super().__init__(name=name, 
+			inputs=[layer_input_seq, layer_input_mask],
+			outputs=[layer_linear])
 
 		self.d_model = d_model
 		self.d_seq = d_seq
@@ -19,22 +33,6 @@ class BeepBrain(Model):
 		self.num_decoders = num_decoders
 		self.dropout = dropout
 
-		self.input = layers.Input(name="input", shape=(self.d_seq, self.d_model))
-		self.decoders = [keras_nlp.layers.TransformerDecoder(name=f"decoder{i}", intermediate_dim=self.d_ff, num_heads=self.num_heads) 
-			for i in range(self.num_decoders)]
-		self.linear = layers.Dense(name="linear", units=self.d_out)
-
-	def call(self, input, training=False):
-		pass
-		# pad input
-		#padded_input = 
-
-		# call network
-
-
-
-
-
 class NoteTokenLoss(losses.Loss):
 	def __init__(self, tokenizer, from_logits=True):
 		self.tokenizer = tokenizer
@@ -42,16 +40,18 @@ class NoteTokenLoss(losses.Loss):
 		self.binary_loss = losses.BinaryCrossentropy(from_logits=from_logits)
 
 	def call(self, y_true, y_pred):
-		true_is_occupied, true_semitones, true_octaves = tokenizer.split(y_true)
-		pred_is_occupied, pred_semitones, pred_octaves = tokenizer.split(y_pred)
+		true_metadata = y_true[:Song.metadata_size()]
+		pred_metadata = y_pred[:Song.metadata_size()]
 
+		true_is_occupied, true_semitones, true_octaves = tokenizer.split(y_true[Song.metadata_size():, ...])
+		pred_is_occupied, pred_semitones, pred_octaves = tokenizer.split(y_pred[Song.metadata_size():, ...])
+
+		loss_metadata = self.binary_loss(true_metadata, pred_metadata)
 		loss_is_occupied = self.binary_loss(true_is_occupied, pred_is_occupied)
 		loss_semitones = self.cross_loss(true_semitones, pred_semitones)
 		loss_octaves = self.cross_loss(true_octaves, pred_octaves)
 
-		print(loss_is_occupied, loss_semitones, loss_octaves)
-
-		return loss_is_occupied + loss_semitones + loss_octaves
+		return loss_metadata + loss_is_occupied + loss_semitones + loss_octaves
 
 # use tf.padded_batch ....
 
@@ -151,6 +151,6 @@ if __name__ == "__main__":
 		tokenizer.encode(pred_song, method="sparse"))
 	)
 
-	#model = BeepBrain()
+	model = BeepBrain()
 
-	#model.summary()
+	model.summary()
