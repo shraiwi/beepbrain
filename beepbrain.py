@@ -9,7 +9,7 @@ from song2vec import Song
 
 class BeepBrain(Model):
 	def __init__(self, name="BeepBrain", d_model=32, d_seq=1024, d_out=(12+8)*4+2, d_ff=1024, num_heads=8, num_decoders=4, dropout=0.0):
-		layer_input_seq = layers.Input(name="sequence", shape=(d_seq, d_out))
+		layer_input_seq = layers.Input(name="sequence", shape=(d_seq, d_model))
 		layer_input_mask = layers.Input(name="mask", shape=(d_seq,))
 
 		layer_decoder = layer_input_seq
@@ -35,6 +35,7 @@ class BeepBrain(Model):
 
 class NoteTokenLoss(losses.Loss):
 	def __init__(self, tokenizer, from_logits=True):
+		super().__init__()
 		self.tokenizer = tokenizer
 		self.cross_loss = losses.CategoricalCrossentropy(from_logits=from_logits)
 		self.binary_loss = losses.BinaryCrossentropy(from_logits=from_logits)
@@ -99,18 +100,20 @@ def make_song_dataset(folder_dir, tokenizer, d_seq):
 			for (mask, x), (_, y) in zip(masked_sliding_window(dense_render, **sliding_window_args), 
 				masked_sliding_window(sparse_render, **sliding_window_args)):
 
-				yield (tf.convert_to_tensor(mask), 
-					tf.convert_to_tensor(x), 
+				yield (
+					(tf.convert_to_tensor(x), tf.convert_to_tensor(mask)), 
 					tf.convert_to_tensor(y))
 
 	return tf.data.Dataset.from_generator(
 		lambda: _generator_func(folder_dir, tokenizer, d_seq),
 		output_signature=(
-			tf.TensorSpec(name="mask", 
-				shape=(d_seq), dtype=tf.bool),
-			tf.TensorSpec(name="x", 
-				shape=(d_seq, tokenizer.token_size["dense"] + Song.metadata_size()), 
-				dtype=tf.float32),
+			(
+				tf.TensorSpec(name="x", 
+					shape=(d_seq, tokenizer.token_size["dense"] + Song.metadata_size()), 
+					dtype=tf.float32),
+				tf.TensorSpec(name="mask", 
+					shape=(d_seq), dtype=tf.bool),
+			),
 			tf.TensorSpec(name="y", 
 				shape=(d_seq, tokenizer.token_size["sparse"] + Song.metadata_size()), 
 				dtype=tf.float32), )
@@ -124,7 +127,7 @@ if __name__ == "__main__":
 
 	dataset = make_song_dataset("parsed_archive", tokenizer, 1024)
 
-	for mask, x, y in dataset.take(10).as_numpy_iterator():
+	for (x, mask), y in dataset.take(10).as_numpy_iterator():
 		if tf.math.reduce_all(mask) == False:
 			plt.imshow(y.T)
 			plt.show()
