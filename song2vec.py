@@ -121,6 +121,9 @@ class Song:
 		self.bar_size = self.bar_indices.shape[-1]
 		self.bar_occupancy = self.bar_indices.astype(bool)
 
+	def render(self, method="dense", out=None):
+		return SongPermutation(self, tuple(range(len(self.rendered_channels)))).render(method=method, out=out)
+
 	def permutate(self, n_note, n_drum=None):
 		"""
 		yield song permutations containing n_note note channels and n_drum drum channels.

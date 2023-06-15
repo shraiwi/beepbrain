@@ -65,8 +65,7 @@ def render_dir(folder_dir, tokenizer):
 			song_json = json.load(f_json)
 			song = Song(song_json, tokenizer=tokenizer)
 
-			for perm in song.permutate(n_note=None): # use all note channels
-				yield perm.render("dense"), perm.render("sparse")
+			yield song.render("dense"), song.render("sparse")
 
 def masked_sliding_window(x, d_seq, stride, pad_value=0):
 	"""
