@@ -50,12 +50,13 @@ def pat2chords(pat, parts_per_tick, out=None, ticks_per_pattern=48, tokenizer=no
 def bit_count(n):
 	return int(np.log2(n) + 0.5)
 
-MAX_CHANNELS = 15
-
-def metadata_size(max_channels=MAX_CHANNELS):
-	return bit_count(MAX_CHANNELS) + 1
-
 class Song:
+
+	MAX_CHANNELS = 15
+
+	def metadata_size():
+		return bit_count(Song.MAX_CHANNELS) + 1
+
 	def __init__(self, song_data, tokenizer=NoteTokenizer(), ticks_per_pattern=48, include_metadata=True):
 
 		self.ticks_per_pattern = ticks_per_pattern
@@ -88,10 +89,10 @@ class Song:
 			rendered_channel_chords = np.concatenate(tuple(channel_chords[channel_bars]), axis=0)
 
 			if include_metadata:
-				channel_metadata = np.zeros(metadata_size(), dtype=note2vec.ftype)
+				channel_metadata = np.zeros(Song.metadata_size(), dtype=note2vec.ftype)
 
 				channel_metadata[0] = float(is_relative)
-				for bit_num in range(bit_count(MAX_CHANNELS)):
+				for bit_num in range(bit_count(Song.MAX_CHANNELS)):
 					channel_metadata[1 + bit_num] = float(bool(chan_idx & (1 << bit_num)))
 			else:
 				channel_metadata = np.zeros(0)
@@ -114,6 +115,7 @@ class Song:
 
 		for method in self.rendered_channels:
 			self.rendered_channels[method] = np.array(self.rendered_channels[method])
+
 
 		self.bar_indices = np.array(self.bar_indices, dtype=np.uint8)
 		self.bar_size = self.bar_indices.shape[-1]
@@ -147,7 +149,7 @@ class SongPermutation:
 		self.parent = parent
 		self.channel_indices = channel_indices
 	
-	def interleave(self, method="dense", out=None):
+	def render(self, method="dense", out=None):
 		"""
 		interleave the channels using numpy.
 
@@ -167,6 +169,7 @@ class SongPermutation:
 		for chan_idx, parent_chan_idx in enumerate(self.channel_indices):
 			out[chan_idx::len(self.channel_indices), ...] = rendered_channel[parent_chan_idx]
 
+		"""
 		indices = np.tile(
 			np.arange(len(self.channel_indices), dtype=note2vec.itype), 
 			(2, rendered_channel.shape[-2])
@@ -175,8 +178,11 @@ class SongPermutation:
 			rendered_channel.shape[-2], dtype=note2vec.itype), 
 			len(self.channel_indices)
 		)
+		"""
 
-		return indices, out
+		return out
+
+
 
 if __name__ == "__main__":
 	import matplotlib.pyplot as plt
@@ -200,7 +206,7 @@ if __name__ == "__main__":
 		#plt.show()
 
 		for perm in song.permutate(n_note=None):
-			indices, interleaved = perm.interleave(method="dense")
+			indices, interleaved = perm.render(method="dense")
 
 			plt.imshow(interleaved[:40].T)
 			plt.show()

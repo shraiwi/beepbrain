@@ -104,18 +104,18 @@ class NoteTokenizer():
 		for dense tokens, this will be the pitches that it is constructed from.
 		for sparse token this will be the pitches in a (is_occupied, semitone, octave) array
 
-		(pitch_0, pitch_1, ...)
+		(is_occupied[], semitones[], octaves[])
 		"""
 
 		for pitch_idx in range(self.chord_size):
 			if method == "dense":
 				raise NotImplementedError()
 			elif method == "sparse":
-				pitch_offset = self.token_size[method] * pitch_idx
-				yield (
+				pitch_offset = self.token_size[method] * pitch_idx // self.chord_size
+				return (
 					tokens[..., pitch_offset + 0 : pitch_offset + 1], 
 					tokens[..., pitch_offset + 1 : pitch_offset + 1 + SEMITONE_COUNT], 
-					tokens[..., pitch_offset + 1 + SEMITONE_COUNT : pitch_offset + self.octave_range]
+					tokens[..., pitch_offset + 1 + SEMITONE_COUNT : pitch_offset + 1 + SEMITONE_COUNT + self.octave_range]
 				)
 
 	def encode(self, pitches, relative=True, sort=True, method="dense"):
@@ -153,17 +153,14 @@ class NoteTokenizer():
 if __name__ == "__main__":
 	import matplotlib.pyplot as plt
 
-	tokenizer = NoteTokenizer(method="sparse")
-
-	print(tokenizer.lut.shape)
+	tokenizer = NoteTokenizer()
 
 	print(tokenizer.encode(-1))
 
-	dots = np.dot(tokenizer.lut, tokenizer.lut[..., None])
+	#dots = np.dot(tokenizer.lut, tokenizer.lut[..., None])
 
-	plt.imshow(dots)
-	plt.show()
-	plt.clf()
+	#plt.imshow(dots)
+	#plt.show()
 
 	print(tokenizer.encode([
 		(1, 1, 5, 4),
@@ -187,5 +184,8 @@ if __name__ == "__main__":
 
 	plt.imshow(tokenizer.encode([ (1, 1, 2, 3), (3, 4, 5, 6), (0, 1, -1, -1), (25, 27, 29, 30) ]).T)
 	plt.show()
+
+	token = tokenizer.encode([(1, -1), (2, 12+0)], relative=False, method="sparse")
+	print(token.shape, *tokenizer.split(token), sep="\n")
 
 
